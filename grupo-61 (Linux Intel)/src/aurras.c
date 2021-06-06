@@ -4,19 +4,84 @@
 #include <unistd.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
+
+
+char* pointerToString(int argc, char** argv){
+    char*buf = malloc(1024);
+    int size = 1024;
+    for(int i = 1; i < argc ; i++){
+        strcat(buf,argv[i]);
+        strcat(buf," ");
+        if(strlen(buf) > size*(2/3)){
+            size*=2;
+            realloc(buf,size);
+        }   
+    }
+    return buf;
+}
 
 int main(int argc, char** argv){
-    int i;
+    int file;
     char buf[1024];
-    int n=0,j=0;
-    char teste[1024];
-    i = open("p_2_fifo",O_WRONLY,0622);
-       
-    for(; *(++argv) ;)
-    {
-        write(i,*argv,strlen(*argv));
+    int n=0;
+    
+    // --------- info
+
+    if(argc == 1){
+        printf("./aurras status\n");
+        printf("./aurras transform input-filename output-filename filter-id-1 filter-id-2 ...\n");
+    }
+    // ---------- status
+
+    else if( argc == 2 && !strcmp(argv[1],"status")){
+        if( (file = open("tmp/fifo",O_WRONLY)) == -1){
+            perror("Erro a abrir FIFO");
+            return -1;
+        }
+
+        printf("%s\n",argv[1]);
+        write(file,argv[1], 7);
+        
+        if( (file = open("tmp/status",O_RDONLY)) == -1){
+            perror("Erro a abrir FIFO_STATUS");
+            return -1;
+        }
+        
+        while((n = read(file,buf,1024))){      
+            write(STDOUT_FILENO,buf,n);
+        }
+    }
+    // ---------- transform
+
+    else if( argc > 4 && !strcmp(argv[1],"transform")){
+    
+        if( (file = open("tmp/fifo",O_WRONLY)) == 1){
+            perror("Erro a abrir FIFO");
+            return -1;
+        }
+        
+        char* str = pointerToString(argc,argv);
+        
+        write(file,str,strlen(str));
+        free(str);
+        
+        printf("pending\n");
+        //------------verificacao
+
+        //-----------------------
+        printf("processing\n");
+        //------------verificacao
+
+        //-----------------------
+        printf("done\n");
+    }
+    
+    else{
+        printf("Input inválido\n");
     }
 
-    i = open("p_2_fifo",O_RDONLY,0622);
+    return 0;
+
 }  
    

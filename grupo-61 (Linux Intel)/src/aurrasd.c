@@ -1,35 +1,75 @@
 #include <sys/types.h>
 #include <sys/stat.h>
-   #include <fcntl.h>
-    #include <unistd.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
-ssize_t readln(int fd, char *line, size_t size){
-        int n,r=0,i=0;
+#define N_Filters 5
 
-        if((n=read(fd,line,size))>0){
-                r+=n;
-                for(i = 0; i < n && line[i] != '\n'; i++);
+char *configs[N_Filters][4];
+int used[N_Filters];
+int task;
+
+void sendStatus(int fifo){
+    char* buf = malloc(1024);
+    for(int i = 0; i < N_Filters ; i++){
+        write(fifo,"filter ",8);
+        write(fifo,configs[i][0],strlen(configs[i][0]));        
+        sprintf(buf,": %d/%s (running/max)\n",used[i],configs[i][2]);
+        write(fifo,buf,strlen(buf));
+    }
+    sprintf(buf,"pid: %d\n",getpid());
+    write(fifo,buf,strlen(buf));
+}
+
+int aplicaFiltros(char** args, int n_args){
+    int p[2];  // p[0] = 3   p[1] = 4
+    int idx,i;
+    char* cmd[25][3];
+    for(i = 3; i <= (n_args-2) ; i++){
+        for(idx=0; strcmp(args[i],configs[idx][0])!=0 && idx < N_Filters ; idx++);
+        if(idx == N_Filters) 
+            return -1;
+        else{
+            cmd[i-3][0]=strdup(configs[idx][1]);
+            cmd[i-3][1]=cmd[i-3][0];
+            cmd[i-3][2]=NULL;
         }
-        if(line[i]=='\n') i++;
-        lseek(fd,i-r,SEEK_CUR);
-return i;
+    }/*
+    for(i = 0; i < (n_args - 4); i++){
+        pipe(p); // sempre antes do fork
+        if(!fork()){
+            dup2(p[1],1); close(p[1]); close(p[0]);;
+            execvp(cmd[i][0],cmd[i]);
+            _exit(1);        
+        }
+        else{
+            dup2(p[0],0); close(p[0]); close(p[1]);
+        }
+    }
+    execvp(cmd[i][0],cmd[i]);*/
+    return 0;
 }
 
 
 int main(int argc , char* argv[]){
+    argv[1] = "etc/aurrasd.conf";
+    argv[2] = "bin/aurras-filters";
 
 // ---------- criacao do fifo e acerto de propriedades
 
-    mkfifo("fifo",0622);
-    chmod("fifo",0622);
+    mkfifo("tmp/fifo",0622); // rw--w--w-
+    mkfifo("tmp/status",0644); // rw-r--r--
+    chmod("tmp/fifo",0622); // rw--w--w-
+    chmod("tmp/status",0644); // rw-r--r--
 
 // ----------- inicializador de ficheiros e verificação
-
-    char buf[1024]="";
+    task=0;
+    char *buf= malloc(1024);
     char* filters;
-    int config, fifo, n;
+    int config, fifo=-1, status, n;
     
     if( argv[1] ){
         if ((config = open(argv[1],O_RDONLY,0622)) == -1){
@@ -48,38 +88,50 @@ int main(int argc , char* argv[]){
     }else 
         filters = argv[2];
     
-    if ((fifo = open("fifo",O_RDONLY,0622)) == -1){
-        perror("Erro a abrir pipe com nome");
-        return -1;
-    }
 
-// --------------------------------------------
-    printf("ola1");
+// ------------ inicializador do array de configuração
     
-    char *exec_args[100][10];
-    int word = 1, lines = 0;
-    exec_args[0][0] = buf;
+    read(config,buf,1024);
+
+    for(int j = 0; j < N_Filters ; j++){
+        for(int i = 0; i < 3 ; i++)
+            configs[j][i] = strdup(strsep(&buf," \n"));
+
+        configs[j][3] = NULL;
+    }
+    free(buf);
+    buf=malloc(1024);
     
-    for(lines = 0; n = readln(config,buf,1024) ; lines++){
-        for (int j = 0; buf[j]; j++){
-            if (buf[j] == ' '){
-                buf[j] = '\0';
-                exec_args[word++][lines] = buf + j + 1;
+//  ---------Abertura do FIFO
+    while(1){
+        if ((fifo = open("tmp/fifo",O_RDONLY,0622)) == -1){
+            perror("Erro a abrir FIFO");
+            return -1;
+        }
+        while((n = read(fifo,buf,1024))){
+            if(!strcmp(buf,"status")){
+                status = open("tmp/status",O_WRONLY,0644);
+                sendStatus(status);
+                close(status);
+            }else{
+                // ---- divisao do buf em palavras ----
+                char *exec_args[100];
+                int word = 1;
+                exec_args[0] = buf;
+                for (int i = 0; buf[i]; i++){
+                    if (buf[i] == ' '){
+                        buf[i] = '\0';
+                        exec_args[word++] = buf + i + 1;
+                    }
+                }
+                exec_args[word] = NULL;
+
+                if(aplicaFiltros(exec_args,word)==-1){
+                    printf("Filtro inválido\n");
+                }
             }
         }
-        exec_args[word][lines] = NULL;
-    }
-    printf("ola");
-    for(int i = 0; i < lines ; i++)
-        for(int j = 0; j < word ; j++){
-            printf("%s |",exec_args[j][i]);
-        }
-/*
-    while(1){    
-        while((n = read(fifo,buf,1024))){      
-            
-        }
-        fifo = open("fifo",O_RDONLY,0622);
-    } */ 
+    } 
+
     return 0;
 }   
