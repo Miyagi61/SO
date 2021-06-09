@@ -11,6 +11,7 @@
 char *configs[N_Filters][4];
 int used[N_Filters];
 int task;
+char* filters;
 
 void sendStatus(int fifo){
     char* buf = malloc(1024);
@@ -28,35 +29,57 @@ int aplicaFiltros(char** args, int n_args){
     int p[2];  // p[0] = 3   p[1] = 4
     int idx,i;
     char* cmd[25][3];
+    char fst[25][100];
     for(i = 3; i <= (n_args-2) ; i++){
         for(idx=0; strcmp(args[i],configs[idx][0])!=0 && idx < N_Filters ; idx++);
         if(idx == N_Filters) 
             return -1;
         else{
-            cmd[i-3][0]=strdup(configs[idx][1]);
+            sprintf(fst[i-3],"%s/%s",filters,configs[idx][1]);
+            cmd[i-3][0]=fst[i-3];
             cmd[i-3][1]=cmd[i-3][0];
             cmd[i-3][2]=NULL;
         }
-    }/*
-    for(i = 0; i < (n_args - 4); i++){
+    }
+    for(i = 0; i < (n_args - 5); i++){
         pipe(p); // sempre antes do fork
         if(!fork()){
             dup2(p[1],1); close(p[1]); close(p[0]);;
-            execvp(cmd[i][0],cmd[i]);
+            if(execvp(cmd[i][0],cmd[i]) == -1){
+                perror("Erro a aplicar filtro"); _exit(-1);
+            }
             _exit(1);        
         }
         else{
             dup2(p[0],0); close(p[0]); close(p[1]);
         }
     }
-    execvp(cmd[i][0],cmd[i]);*/
+    if(execl(fst[i],fst[i],NULL) == -1){
+        perror("Erro a aplicar filtro"); _exit(-1);
+    }
+    //if(execl("bin/aurrasd-filters/aurrasd-echo","bin/aurrasd-filters/aurrasd-echo",NULL) == -1){
+      //  perror("Erro a aplicar filtro"); _exit(-1);
+    //}
     return 0;
 }
 
+int redir(char* args[]){
+    int input,output;
+    if( (input = open(args[1], O_RDONLY)) == -1){
+        perror("open input"); return -1;
+    }
+    dup2(input,0); close(input);
+    
+    if( (output = open(args[2], O_TRUNC | O_WRONLY | O_CREAT, 0644)) == -1){
+        perror("create output"); return -1;
+    };
+    dup2(output,1); close(output);
+    return 0;
+}
 
 int main(int argc , char* argv[]){
     argv[1] = "etc/aurrasd.conf";
-    argv[2] = "bin/aurras-filters";
+    argv[2] = "bin/aurrasd-filters";
 
 // ---------- criacao do fifo e acerto de propriedades
 
@@ -68,7 +91,6 @@ int main(int argc , char* argv[]){
 // ----------- inicializador de ficheiros e verificação
     task=0;
     char *buf= malloc(1024);
-    char* filters;
     int config, fifo=-1, status, n;
     
     if( argv[1] ){
@@ -86,7 +108,7 @@ int main(int argc , char* argv[]){
         perror("Pasta de filtros inexistente");
         return -1;
     }else 
-        filters = argv[2];
+        filters = strdup(argv[2]);
     
 
 // ------------ inicializador do array de configuração
@@ -126,9 +148,17 @@ int main(int argc , char* argv[]){
                 }
                 exec_args[word] = NULL;
 
-                if(aplicaFiltros(exec_args,word)==-1){
-                    printf("Filtro inválido\n");
+                //------ redirecionamento ----------------
+
+                if(redir(exec_args)==-1){
+                    return -1;
                 }
+        
+                //-----------------------------------------
+                if(!fork()) 
+                    if(aplicaFiltros(exec_args,word)==-1){
+                        perror("Filtro inválido");
+                    }
             }
         }
     } 

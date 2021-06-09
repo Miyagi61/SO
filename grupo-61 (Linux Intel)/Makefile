@@ -23,9 +23,9 @@ d_aurras:
 	gdb bin/aurras
 
 clean:
-	rm obj/* tmp/* bin/{aurras,aurrasd}
+	rm obj/* tmp/* bin/aurras bin/aurrasd
 
 test:
 	bin/aurras
 	bin/aurras status
-	bin/aurras transform samples/sample-1.m4a output.m4a alto eco rapido
+	bin/aurras transform samples/sample-1-so.m4a output.m4a alto eco rapido

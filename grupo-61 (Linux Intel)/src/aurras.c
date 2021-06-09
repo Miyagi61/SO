@@ -15,7 +15,10 @@ char* pointerToString(int argc, char** argv){
         strcat(buf," ");
         if(strlen(buf) > size*(2/3)){
             size*=2;
-            realloc(buf,size);
+            if(realloc(buf,size)==NULL){
+                perror("Erro a realocar memória");
+                return NULL;
+            };
         }   
     }
     return buf;
@@ -40,7 +43,6 @@ int main(int argc, char** argv){
             return -1;
         }
 
-        printf("%s\n",argv[1]);
         write(file,argv[1], 7);
         
         if( (file = open("tmp/status",O_RDONLY)) == -1){
@@ -61,11 +63,14 @@ int main(int argc, char** argv){
             return -1;
         }
         
-        char* str = pointerToString(argc,argv);
+        char* str;
+        if((str = pointerToString(argc,argv))==NULL){
+            return -1;
+        }
         
         write(file,str,strlen(str));
         free(str);
-        
+        close(file);
         printf("pending\n");
         //------------verificacao
 
