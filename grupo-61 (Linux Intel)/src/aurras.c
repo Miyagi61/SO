@@ -71,15 +71,17 @@ int main(int argc, char** argv){
         write(file,str,strlen(str));
         free(str);
         close(file);
-        printf("pending\n");
-        //------------verificacao
+        
+        if( (file = open("tmp/process",O_RDONLY)) == -1){
+            perror("Erro a abrir FIFO_PROCESS");
+            return -1;
+        }
+    
+      // ------- P|P|D/E -----------
+        while(n = read(file,buf,1024))    
+            write(STDOUT_FILENO,buf,n);
 
-        //-----------------------
-        printf("processing\n");
-        //------------verificacao
-
-        //-----------------------
-        printf("done\n");
+        close(file);
     }
     
     else{
