@@ -13,8 +13,11 @@ typedef void (*sighandler_t)(int);
 char *configs[100][4];
 int task;
 int n_filters;
+char* current_requests[100];
 char* filters;
 int used[100];
+char* queue[100];
+char* pending_requests[100];
 
 int aplicaFiltros(char** args, int n_args){
     int p[2];  // p[0] = 3   p[1] = 4
@@ -64,14 +67,19 @@ int redir(char* args[]){
 
 int checkFiltros(char *args[], int n_args){
     int i,idx;//process;
-    for(i = 3; i <= (n_args-2) ; i++){
+    for(i = 4; i <= (n_args-1) ; i++){
         for(idx=0; idx < n_filters && strcmp(args[i],configs[idx][0])!=0 ; idx++);
         if(idx == n_filters){
          //   process = open("tmp/process",O_WRONLY,0644);
          //   write(process,"Filtros inválidos\n",19);
          //   close(process)
-            kill(atoi(args[0]),SIGINT);
+            kill(atoi(args[0]),SIGALRM);
             return 0;
+        }else{
+            if(used[idx] == atoi(configs[idx][2])){
+              //  addPendingRequest(args,n_args);
+                return 0;
+            }
         }
             
     }
@@ -80,6 +88,13 @@ int checkFiltros(char *args[], int n_args){
 
 void sendStatus(int fifo){
     char* buf = malloc(1024);
+    char* buf_tasks = malloc(1024);
+    for(int i = 0; i < 100 ; i++){
+        if(current_requests[i] != NULL){
+            sprintf(buf_tasks,"task #%d: %s\n",i,current_requests[i]);
+            write(fifo,buf_tasks,strlen(buf_tasks));
+        }
+    }
     for(int i = 0; i < n_filters ; i++){
         write(fifo,"filter ",8);
         write(fifo,configs[i][0],strlen(configs[i][0]));        
@@ -90,7 +105,6 @@ void sendStatus(int fifo){
     write(fifo,buf,strlen(buf));
 }
 
-// t in out f1 f2 f3
 void muda_Used(char* args[], int n_args, int s_d){
     int j;
     for(int i = 3; i < (n_args-1) ; i++){
@@ -99,6 +113,34 @@ void muda_Used(char* args[], int n_args, int s_d){
     }
 }
 
+char* pointerToString(int argc, char** argv){
+    char*buf = malloc(1024);
+    int size = 1024;
+    strcpy(buf,"");
+    for(int i = 1; i < argc ; i++){
+        strcat(buf,argv[i]);
+        strcat(buf," ");
+        if(strlen(buf) > size*(2/3)){
+            size*=2;
+            if(realloc(buf,size)==NULL){
+                perror("Erro a realocar memória");
+                return NULL;
+            };
+        }   
+    }
+    return buf;
+}
+
+
+void clean_current_request(char* buf){
+    int i;
+    for(i = 0; i < 100; i++){
+        if(current_requests[i] && !strcmp(buf,current_requests[i])){
+            current_requests[i] = NULL;
+            break;
+        }
+    }  
+}
 
 int main(int argc , char* argv[]){
     argv[1] = "etc/aurrasd.conf";   // RETIRAR ISTOOOOO!!!!!!!
@@ -139,6 +181,7 @@ int main(int argc , char* argv[]){
     
     for(int i = 0; i < 100 ; i++){
         used[i]=0;
+        current_requests[i] = NULL;
     }
 
 // ------------ inicializador do array de configuração
@@ -168,7 +211,6 @@ int main(int argc , char* argv[]){
             perror("Erro a abrir FIFO");
              return -1;
         }
-        task++;
         while((n = read(fifo,buf,1024))){
         // ---- divisao do buf em palavras ----
             char *exec_args[100];
@@ -182,6 +224,7 @@ int main(int argc , char* argv[]){
             }
             exec_args[word] = NULL;
             word--;
+
             if(!strcmp(buf,"status")){
                 status = open("tmp/status",O_WRONLY,0644);
                 sendStatus(status);
@@ -189,14 +232,17 @@ int main(int argc , char* argv[]){
             }
             else if(!strcmp(exec_args[0],"used")){
                 muda_Used(&exec_args[2],word-1,-1);
+                char *elim = pointerToString(word-1,&exec_args[1]);
+                clean_current_request(elim);
+                free(elim);
             }            
-            else if(checkFiltros(&exec_args[1],word)){                
+            else if(checkFiltros(exec_args,word)){           
             //-----------------------------------------
             //    process = open("tmp/process",O_WRONLY,0644);
             //    write(process,"Pending\n",9);
 
             //    checkFree(exec_args,word);
-
+                current_requests[task++] = pointerToString(word,exec_args);
             //-------------Paragem --------------------    
                 kill(atoi(exec_args[0]),SIGUSR1);
             //    write(process,"Processing...\n",15);

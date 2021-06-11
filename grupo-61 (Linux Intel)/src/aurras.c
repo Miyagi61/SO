@@ -56,6 +56,10 @@ void handler(int s){
         close(file);
         kill(pid,SIGKILL);
     }
+    else if( s == SIGALRM ){
+        printf("Filtros inválidos\n");
+        kill(pid,SIGKILL);
+    }
 }
 
 int main(int argc, char** argv){
@@ -68,6 +72,7 @@ int main(int argc, char** argv){
     signal(SIGUSR1,handler);
     signal(SIGUSR2,handler);
     signal(SIGINT,handler);
+    signal(SIGALRM,handler);
     // --------- info
 
     if(argc == 1){
