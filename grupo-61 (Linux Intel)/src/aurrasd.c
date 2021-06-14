@@ -18,6 +18,26 @@ char* filters;
 int used[100];
 char* queue[100];
 char* pending_requests[100];
+int n_pending;
+int my_pid;
+
+char* pointerToString(int argc, char** argv){
+    char*buf = malloc(1024);
+    int size = 1024;
+    strcpy(buf,"");
+    for(int i = 1; i < argc ; i++){
+        strcat(buf,argv[i]);
+        strcat(buf," ");
+        if(strlen(buf) > size*(2/3)){
+            size*=2;
+            if(realloc(buf,size)==NULL){
+                perror("Erro a realocar memória");
+                return NULL;
+            };
+        }   
+    }
+    return buf;
+}
 
 int aplicaFiltros(char** args, int n_args){
     int p[2];  // p[0] = 3   p[1] = 4
@@ -65,6 +85,13 @@ int redir(char* args[]){
     return 0;
 }
 
+void addPendingRequest(char *args[], int n_args){
+    char * buf = malloc(1024);
+    strcpy(buf,args[0]);
+    strcat(buf," ");
+    pending_requests[n_pending++] = strcat(buf,pointerToString(n_args,args));
+}
+
 int checkFiltros(char *args[], int n_args){
     int i,idx;//process;
     for(i = 4; i <= (n_args-1) ; i++){
@@ -74,10 +101,10 @@ int checkFiltros(char *args[], int n_args){
          //   write(process,"Filtros inválidos\n",19);
          //   close(process)
             kill(atoi(args[0]),SIGALRM);
-            return 0;
+            return 1;
         }else{
             if(used[idx] == atoi(configs[idx][2])){
-              //  addPendingRequest(args,n_args);
+                addPendingRequest(args,n_args);
                 return 0;
             }
         }
@@ -107,28 +134,22 @@ void sendStatus(int fifo){
 
 void muda_Used(char* args[], int n_args, int s_d){
     int j;
+    int count[n_filters];
+
+    for(int i = 0; i < n_filters ; i++)
+        count[i] = 0;
+
     for(int i = 3; i < (n_args-1) ; i++){
         for(j = 0; strcmp(configs[j][0],args[i]) ; j++);
-        used[j] = used[j] + 1*s_d;
+        count[j]++;
     }
-}
 
-char* pointerToString(int argc, char** argv){
-    char*buf = malloc(1024);
-    int size = 1024;
-    strcpy(buf,"");
-    for(int i = 1; i < argc ; i++){
-        strcat(buf,argv[i]);
-        strcat(buf," ");
-        if(strlen(buf) > size*(2/3)){
-            size*=2;
-            if(realloc(buf,size)==NULL){
-                perror("Erro a realocar memória");
-                return NULL;
-            };
+  //  for(int i = 3; i < (n_args-1) ; i++){
+    for(j = 0; j < n_filters ; j++){
+        if(count[j]){
+            used[j] = used[j] + 1*s_d;
         }   
     }
-    return buf;
 }
 
 
@@ -142,11 +163,110 @@ void clean_current_request(char* buf){
     }  
 }
 
+int testPending(){ 
+    int idx;
+    int check = 1;
+    char* buf;
+    char *args[100];
+    int n_args = 0;
+    for(int i = 0; i < n_pending ; i++){
+        buf = strdup(pending_requests[i]);
+        for (int i = 0; buf[i]; i++){
+            if (buf[i] == ' '){
+                buf[i] = '\0';
+                args[n_args++] = buf + i + 1;
+                }
+        }
+        args[n_args] = NULL;
+
+        for(int j = 3; j < (n_args-1) ; j++){
+            for(idx=0; idx < n_filters && strcmp(args[j],configs[idx][0])!=0 ; idx++);
+            if(used[idx] == atoi(configs[idx][2])){
+                check = 0;
+            }
+        }
+        if(check == 1){
+            return i;
+        }
+        else
+            check = 1;         
+    }
+    return -1;
+}
+
+void removePending(int idx){
+    free(pending_requests[idx]);
+    for(int i = idx; i < n_pending ; i++){
+        pending_requests[i] = pending_requests[i+1]; 
+    }
+    n_pending--;
+}
+
+void handler(int s){
+    int pending_switch=-1;
+    char* buf;
+    if(s == SIGTERM){
+        for(int i = 0; i < 100 ; i++)    // SIGTERM faz todos os pendentes 
+            used[i]=0;
+
+        while(n_pending > 0){
+            if( (pending_switch = testPending())!=-1 ){
+                buf = strdup(pending_requests[pending_switch]);
+                removePending(pending_switch);
+                pending_switch=-1;           
+                char *exec_args[100];
+                int word = 1;
+                exec_args[0] = buf;
+                for (int i = 0; buf[i]; i++){
+                    if (buf[i] == ' '){
+                        buf[i] = '\0';
+                        exec_args[word++] = buf + i + 1;
+                    }
+                }
+                exec_args[word] = NULL;
+                word--;          
+            //-----------------------------------------
+
+                if (kill(atoi(exec_args[0]),SIGUSR1)==-1){
+                    printf("Cliente incontactável\n");
+                }
+                else{
+                //-------------Paragem --------------------    
+                    if(!fork()){
+                //------ redirecionamento ----------------
+                        redir(&exec_args[1]);
+
+                        pid_t pid_filho = fork();
+                        int ret;
+                        if(!pid_filho){
+                            _exit(aplicaFiltros(&exec_args[1],word));
+                        }
+                        else{                       
+                            waitpid(pid_filho,&ret,0);
+                            /*if(WEXITSTATUS(ret)==-1)
+                                kill(atoi(exec_args[0]),SIGINT);
+                            else
+                                kill(atoi(exec_args[0]),SIGUSR2);
+                            */
+                           kill(atoi(exec_args[0]),SIGKILL);
+                        }
+                     _exit(0);
+                    }
+                }
+            }
+        }
+        printf("\nTerminando de forma graciosa\n");
+        kill(getpid(),SIGKILL);
+    }
+}
+
 int main(int argc , char* argv[]){
     argv[1] = "etc/aurrasd.conf";   // RETIRAR ISTOOOOO!!!!!!!
     argv[2] = "bin/aurrasd-filters";
+
 // ---------- sinais
 
+    signal(SIGTERM,handler);
 
 // ---------- criacao do fifo e acerto de propriedades
 
@@ -154,14 +274,14 @@ int main(int argc , char* argv[]){
     mkfifo("tmp/status",0644); // rw-r--r--
     chmod("tmp/fifo",0622); // rw--w--w-
     chmod("tmp/status",0644); // rw-r--r--
-  //  mkfifo("tmp/process",0644); // rw-r--r--
-  //  chmod("tmp/process",0644); // rw-r--r--
 
 // ----------- inicializador de ficheiros e verificação
     task=0;
     char *buf= malloc(1024);
     int config, fifo=-1, status, n;
-    
+    n_pending = 0;
+    int pending_switch = -1;
+
     if( argv[1] ){
         if ((config = open(argv[1],O_RDONLY,0622)) == -1){
             perror("Erro a abrir ficheiro de configuração ");
@@ -182,6 +302,7 @@ int main(int argc , char* argv[]){
     for(int i = 0; i < 100 ; i++){
         used[i]=0;
         current_requests[i] = NULL;
+        pending_requests[i] = NULL;
     }
 
 // ------------ inicializador do array de configuração
@@ -204,15 +325,23 @@ int main(int argc , char* argv[]){
     }
     //free(buf);
     buf=malloc(1024);
-    
+
 //  ---------Abertura do FIFO
-    while(1){
-        if ((fifo = open("tmp/fifo",O_RDONLY,0622)) == -1){
+    while(1){        
+        //sleep(3);
+        if( (pending_switch = testPending())!=-1 ){
+            buf = strdup(pending_requests[pending_switch]);
+        }
+        else if ((fifo = open("tmp/fifo",O_RDONLY,0622)) == -1){
             perror("Erro a abrir FIFO");
              return -1;
         }
-        while((n = read(fifo,buf,1024))){
-        // ---- divisao do buf em palavras ----
+        while( (pending_switch!=-1) || (n = read(fifo,buf,1024)) > 0){
+
+            if(pending_switch != -1){
+                removePending(pending_switch);
+                pending_switch=-1;
+            }            
             char *exec_args[100];
             int word = 1;
             exec_args[0] = buf;
@@ -238,39 +367,36 @@ int main(int argc , char* argv[]){
             }            
             else if(checkFiltros(exec_args,word)){           
             //-----------------------------------------
-            //    process = open("tmp/process",O_WRONLY,0644);
-            //    write(process,"Pending\n",9);
 
-            //    checkFree(exec_args,word);
-                current_requests[task++] = pointerToString(word,exec_args);
-            //-------------Paragem --------------------    
-                kill(atoi(exec_args[0]),SIGUSR1);
-            //    write(process,"Processing...\n",15);
-                muda_Used(&exec_args[1],word,1);
-                if(!fork()){
-                //------ redirecionamento ----------------
-                    if(redir(&exec_args[1])==-1){
-                        return -1;
-                    }
-
-                    pid_t pid_filho = fork();
-                    int ret;
-                    if(!pid_filho){
-                        _exit(aplicaFiltros(&exec_args[1],word));
-                    }
-                    else{                       
-                        waitpid(pid_filho,&ret,0);
-                        if(WEXITSTATUS(ret)==-1)
-                            kill(atoi(exec_args[0]),SIGINT);
-                            //write(process,"Error\n",7);
-                        else
-                            kill(atoi(exec_args[0]),SIGUSR2);
-                            //write(process,"Done\n",6);
-                    }
-                    _exit(0);
+                if (kill(atoi(exec_args[0]),SIGUSR1)==-1){
+                    printf("Cliente incontactável\n");
                 }
-              //  close(process);
+                else{
+                    current_requests[task++] = pointerToString(word,exec_args);
+            //-------------Paragem --------------------    
                 
+                    muda_Used(&exec_args[1],word,1);
+                    if(!fork()){
+                //------ redirecionamento ----------------
+                        if(redir(&exec_args[1])==-1){
+                            return -1;
+                        }
+
+                        pid_t pid_filho = fork();
+                        int ret;
+                        if(!pid_filho){
+                            _exit(aplicaFiltros(&exec_args[1],word));
+                        }
+                        else{                       
+                            waitpid(pid_filho,&ret,0);
+                            if(WEXITSTATUS(ret)==-1)
+                                kill(atoi(exec_args[0]),SIGINT);
+                            else
+                                kill(atoi(exec_args[0]),SIGUSR2);
+                        }
+                        _exit(0);
+                    }
+                }
             }    
         }
     }

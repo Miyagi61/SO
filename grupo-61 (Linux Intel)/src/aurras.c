@@ -28,33 +28,40 @@ char* pointerToString(int argc, char** argv){
     return buf;
 }
 
-
+int working;
 char* str;
 pid_t pid;
 
 void handler(int s){
     if(s == SIGUSR1){
         printf("Processing...\n");
+        working = 1;
     }
     else if( s == SIGUSR2 || s == SIGINT){
         int file;
         char str_aux[1024];
-        if(s == SIGUSR2)
-            printf("Done\n");
-        else
-            printf("Error\n");
-
-        if( (file = open("tmp/fifo",O_WRONLY)) == -1){
-            perror("Erro a abrir FIFO");
+        if(s == SIGINT && working == 0){
+            printf("\nInterrupted while pending\n");
+            kill(pid,SIGKILL);
         }
-        strcpy(str_aux,"");
-        strcat(str_aux,"used ");
-        strcat(str_aux,str);
+        else{
+            if(s == SIGUSR2)
+                printf("Done\n");
+            else if( s == SIGINT && working == 1)
+                printf("Error\n");
+
+            if( (file = open("tmp/fifo",O_WRONLY)) == -1){
+                perror("Erro a abrir FIFO");
+            }
+            strcpy(str_aux,"");
+            strcat(str_aux,"used ");
+            strcat(str_aux,str);
         
-        write(file,str_aux,strlen(str_aux));
-        free(str);
-        close(file);
-        kill(pid,SIGKILL);
+            write(file,str_aux,strlen(str_aux));
+            free(str);
+            close(file);
+            kill(pid,SIGKILL);
+        }
     }
     else if( s == SIGALRM ){
         printf("Filtros inválidos\n");
@@ -67,19 +74,22 @@ int main(int argc, char** argv){
     char buf[1024];
     int n=0;
     pid = getpid();
+    working = 0;
 
-    // --------- sinais
+    // --------- sinais ----------------------------------------
+
     signal(SIGUSR1,handler);
     signal(SIGUSR2,handler);
     signal(SIGINT,handler);
     signal(SIGALRM,handler);
-    // --------- info
+
+    // ---------- info -----------------------------------------
 
     if(argc == 1){
         printf("./aurras status\n");
         printf("./aurras transform input-filename output-filename filter-id-1 filter-id-2 ...\n");
     }
-    // ---------- status
+    // ---------- status ----------------------------------------
 
     else if( argc == 2 && !strcmp(argv[1],"status")){
         if( (file = open("tmp/fifo",O_WRONLY)) == -1){
@@ -98,7 +108,7 @@ int main(int argc, char** argv){
             write(STDOUT_FILENO,buf,n);
         }
     }
-    // ---------- transform
+    // ---------- transform ---------------------------------------
 
     else if( argc > 4 && !strcmp(argv[1],"transform")){
         printf("Pending\n");
@@ -115,30 +125,6 @@ int main(int argc, char** argv){
         write(file,str,strlen(str));
         close(file);
 
-    // ------- P|P|D/E ----------- 
-     /*   if( (file = open("tmp/process",O_RDONLY)) == -1){
-            perror("Erro a abrir FIFO_PROCESS");
-            return -1;
-        }
-    
-        while(n = read(file,buf,1024))    
-            write(STDOUT_FILENO,buf,n);
-        close(file);
-      
-      // ------- diminuir used -----
-        if( (file = open("tmp/fifo",O_WRONLY)) == -1){
-            perror("Erro a abrir FIFO");
-            return -1;
-        }
-        argv[1]="used";
-        char* str2;
-        if((str2 = pointerToString(argc,argv))==NULL){
-            return -1;
-        }        
-        write(file,str2,strlen(str));
-        free(str2);
-        close(file);
-        return 0;*/
         pause();
         pause();
     }
