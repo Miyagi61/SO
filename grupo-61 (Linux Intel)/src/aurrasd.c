@@ -92,7 +92,7 @@ void addPendingRequest(char *args[], int n_args){
 }
 
 int checkFiltros(char *args[], int n_args){
-    int i,idx;//process;
+    int i,idx;
     for(i = 4; i <= (n_args-1) ; i++){
         for(idx=0; idx < n_filters && strcmp(args[i],configs[idx][0])!=0 ; idx++);
         if(idx == n_filters){
@@ -140,7 +140,6 @@ void muda_Used(char* args[], int n_args, int s_d){
         count[j]++;
     }
 
-  //  for(int i = 3; i < (n_args-1) ; i++){
     for(j = 0; j < n_filters ; j++){
         if(count[j]){
             used[j] = used[j] + 1*s_d;
@@ -309,7 +308,8 @@ void handler(int s){
 }
 
 int main(int argc , char* argv[]){
-
+    argv[1] = "etc/aurrasd.conf";
+    argv[2] = "bin/aurrasd-filters/";
 // ---------- sinais
 
     signal(SIGTERM,handler);
@@ -382,8 +382,7 @@ int main(int argc , char* argv[]){
         }
         while((n = read(fifo,buf,1024)) > 0){
             while(buf && strcmp(buf,"")){
-            main_buf= strsep(&buf,"\n");
-                    
+            main_buf= strsep(&buf,"\n"); 
             char *exec_args[100];
             int word = 1;
             exec_args[0] = main_buf;
