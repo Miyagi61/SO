@@ -16,13 +16,16 @@ char* pointerToString(int argc, char** argv){
     sprintf(buf,"%d ",pid); 
     for(int i = 1; i < argc ; i++){
         strcat(buf,argv[i]);
-        strcat(buf," ");
-        if(strlen(buf) > size*(2/3)){
+        if(i == argc - 1)
+            strcat(buf,"\n");
+        else
+            strcat(buf," ");
+        if(strlen(buf) > size*(2.0/3)){
             size*=2;
             if(realloc(buf,size)==NULL){
                 perror("Erro a realocar memória");
                 return NULL;
-            };
+            }
         }   
     }
     return buf;
@@ -64,7 +67,7 @@ void handler(int s){
         }
     }
     else if( s == SIGALRM ){
-        printf("Filtros inválidos\n");
+        printf("Input inválido ou Servidor fechou\n");
         kill(pid,SIGKILL);
     }
 }
@@ -97,8 +100,11 @@ int main(int argc, char** argv){
             return -1;
         }
 
-        write(file,argv[1], 7);
-        
+        char* aux = malloc(1024);
+        sprintf(aux,"%s\n",argv[1]);
+        write(file,aux, strlen(aux));
+        free(aux);
+
         if( (file = open("tmp/status",O_RDONLY)) == -1){
             perror("Erro a abrir FIFO_STATUS");
             return -1;

@@ -1,8 +1,8 @@
-all: server client
+all: servidor cliente
 
-server: obj/aurrasd.o bin/aurrasd
+servidor: obj/aurrasd.o bin/aurrasd
 
-client: obj/aurras.o bin/aurras
+cliente: obj/aurras.o bin/aurras
 
 bin/aurrasd: obj/aurrasd.o
 	gcc -g obj/aurrasd.o -o bin/aurrasd
